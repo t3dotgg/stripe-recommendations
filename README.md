@@ -38,6 +38,32 @@ This is a quick overview of the "flow" I recommend. More detail below. Even if y
 1. **FRONTEND:** After sync succeeds, redirects user to wherever you want them to be :)
 1. **BACKEND:** On [_all relevant events_](#events-i-track), calls `syncStripeData` with `customerId`
 
+```mermaid
+sequenceDiagram
+    participant USER as User
+    participant FRONTEND as Frontend
+    participant BACKEND as Backend
+    participant STRIPE as Stripe
+
+    USER->>FRONTEND: Clicks "Subscribe" button
+    FRONTEND->>BACKEND: Call "generate-stripe-checkout" endpoint
+    BACKEND->>STRIPE: Create a Stripe customer
+    BACKEND->>BACKEND: Store customerId-userId binding
+    BACKEND->>STRIPE: Create a checkout session
+    STRIPE->>BACKEND: Returns checkout session data
+    BACKEND->>FRONTEND: Returns checkout session data
+    USER->>STRIPE: Completes payment
+    STRIPE->>USER: Redirects back to /success
+
+    FRONTEND->>BACKEND: Calls syncAfterSuccess (on page load)
+    BACKEND->>BACKEND: Retrieve customerId using userId
+    BACKEND->>STRIPE: Calls syncStripeData with customerId
+    STRIPE->>BACKEND: Returns updated data
+    BACKEND->>FRONTEND: Confirms sync completion
+    FRONTEND->>USER: Redirects user to final destination
+
+    STRIPE->>BACKEND: On relevant events, calls syncStripeData with customerId
+```
 This might seem like a lot. That's because it is. But it's also the simplest Stripe setup I've ever seen work.
 
 Let's go into the details on the important parts here.
