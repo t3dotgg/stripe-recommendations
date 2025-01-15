@@ -8,7 +8,7 @@ Until then, this is how I recommend setting up Stripe. I don't cover everything 
 
 ### Pre-requirements
 
-- TypeScript
+- TypeScript / JSDoc
 - Some type of JS backend
 - Working auth (that is verified on your JS backend)
 - A KV store (I use Redis, usually [Upstash](https://upstash.com/?utm_source=theo), but any KV will work)
