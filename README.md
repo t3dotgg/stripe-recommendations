@@ -276,8 +276,14 @@ export type STRIPE_SUB_CACHE =
 
 Gonna slowly drop more things here as I remember them.
 
-DISABLE "CASH APP PAY". I'm convinced this is literally just used by scammers. over 90% of my cancelled transactions are Cash App Pay.
+### DISABLE "CASH APP PAY".
+
+I'm convinced this is literally just used by scammers. over 90% of my cancelled transactions are Cash App Pay.
 ![image](https://github.com/user-attachments/assets/c7271fa6-493c-4b1c-96cd-18904c2376ee)
+
+### ENABLE "Limit customers to one subscription"
+
+This is a really useful hidden setting that has saved me a lot of headaches and race conditions. Fun fact: this is the ONLY way to prevent someone from being able to check out twice if they open up two checkout sessions 🙃 More info [in Stripe's docs here](https://docs.stripe.com/payments/checkout/limit-subscriptions)
 
 ## Things that are still your problem
 
