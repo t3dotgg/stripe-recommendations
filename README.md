@@ -40,6 +40,54 @@ This is a quick overview of the "flow" I recommend. More detail below. Even if y
 1. **FRONTEND:** After sync succeeds, redirects user to wherever you want them to be :)
 1. **BACKEND:** On [_all relevant events_](#events-i-track), calls `syncStripeDataToKV` with `customerId`
 
+```mermaid
+graph TD
+    %% User Actions
+    A[User Clicks Subscribe Button] -->|Frontend| B[Call generate-stripe-checkout endpoint]
+    
+    %% Backend Customer Creation/Verification
+    B -->|Backend| C{Customer exists?}
+    C -->|No| D[Create Stripe Customer]
+    D -->|Store| E[Save customerId to KV store]
+    C -->|Yes| F[Get existing customerId from KV]
+    E --> G[Create Checkout Session]
+    F --> G
+    
+    %% Checkout Flow
+    G -->|Redirect to Stripe| H[User Makes Payment]
+    H -->|Success| I[Redirect to /success route]
+    
+    %% Success Flow
+    I -->|Frontend| J[Trigger syncAfterSuccess]
+    J -->|Backend| K[Get customerId from KV using userId]
+    K --> L[Call syncStripeDataToKV]
+    
+    %% Webhook Flow
+    M[Stripe Webhook Events] -->|POST /api/stripe| N{Is Allowed Event?}
+    N -->|Yes| O[Extract customerId]
+    O --> P[Call syncStripeDataToKV]
+    N -->|No| Q[Skip Processing]
+    
+    %% Data Sync Process
+    subgraph syncStripeDataToKV
+        R[Fetch Latest Subscription Data] -->|List Subscriptions| S{Has Subscriptions?}
+        S -->|Yes| T[Extract Subscription Details]
+        S -->|No| U[Store status: none]
+        T --> V[Store in KV]
+        U --> V
+    end
+    
+    L --> syncStripeDataToKV
+    P --> syncStripeDataToKV
+    
+    %% Final Steps
+    V -->|Complete| W[Redirect User/Update UI]
+
+    class D,G,L,P,R,T process
+    class C,N,S condition
+    class E,F,V storage
+```
+
 This might seem like a lot. That's because it is. But it's also the simplest Stripe setup I've ever seen work.
 
 Let's go into the details on the important parts here.
