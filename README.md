@@ -229,7 +229,7 @@ async function processEvent(event: Stripe.Event) {
 If there are more I should be tracking for updates, please file a PR. If they don't affect subscription state, I do not care.
 
 ```ts
-const allowedEvents = [
+const allowedEvents: Stripe.Event.Type[] = [
   "checkout.session.completed",
   "customer.subscription.created",
   "customer.subscription.updated",
@@ -248,7 +248,7 @@ const allowedEvents = [
   "payment_intent.succeeded",
   "payment_intent.payment_failed",
   "payment_intent.canceled",
-] as Stripe.Event.Type[];
+];
 ```
 
 ### Custom Stripe subscription type
