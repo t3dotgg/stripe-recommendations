@@ -1,5 +1,9 @@
 # How I Stay Sane Implementing Stripe
 
+> [!NOTE]  
+> **Update (2025-02-07)**  
+> Stripe invited me to speak with the CEO at their company-wide all hands meeting. They were super receptive to my feedback, and I see a bright future where none of this is necessary. Until then, I still think this is the best way to set up payments in your SaaS apps.
+
 I have set up Stripe far too many times. I've never enjoyed it. I've talked to the Stripe team about the shortcomings and they say they'll fix them...eventually.
 
 Until then, this is how I recommend setting up Stripe. I don't cover everything - check out [things that are still your problem](#things-that-are-still-your-problem) for clarity on what I'm NOT helping with.
