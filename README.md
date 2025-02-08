@@ -210,12 +210,10 @@ This is the function called in the endpoint that actually takes the Stripe event
 ```ts
 async function processEvent(event: Stripe.Event) {
   // Skip processing if the event isn't one I'm tracking (list of all events below)
-  if (!allowedEvents.includes(event.type)) return;
+  if (!isAllowedStripeEvent(event)) return;
 
   // All the events I track have a customerId
-  const { customer: customerId } = event?.data?.object as {
-    customer: string; // Sadly TypeScript does not know this
-  };
+  const { customer: customerId } = event.data.object;
 
   // This helps make it typesafe and also lets me know if my assumption is wrong
   if (typeof customerId !== "string") {
@@ -233,7 +231,7 @@ async function processEvent(event: Stripe.Event) {
 If there are more I should be tracking for updates, please file a PR. If they don't affect subscription state, I do not care.
 
 ```ts
-const allowedEvents: Stripe.Event.Type[] = [
+export const allowedEvents = [
   "checkout.session.completed",
   "customer.subscription.created",
   "customer.subscription.updated",
@@ -252,7 +250,13 @@ const allowedEvents: Stripe.Event.Type[] = [
   "payment_intent.succeeded",
   "payment_intent.payment_failed",
   "payment_intent.canceled",
-];
+] as const satisfies readonly Stripe.Event.Type[];
+
+export type AllowedEventType = typeof allowedEvents[number];
+export type AllowedStripeEvent = Extract<Stripe.Event, { type: AllowedEventType }>;
+
+export const isAllowedStripeEvent = (event: Stripe.Event): event is AllowedStripeEvent =>
+  allowedEvents.includes(event.type as AllowedEventType)
 ```
 
 ### Custom Stripe subscription type
