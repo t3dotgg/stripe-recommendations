@@ -67,7 +67,11 @@ export async function GET(req: Request) {
       email: user.email,
       metadata: {
         userId: user.id, // DO NOT FORGET THIS
-      },
+      }
+    }, {
+        // prevent race conditions of creating 2 customers in stripe for on user
+        // https://github.com/stripe/stripe-node/issues/476#issuecomment-402541143
+        idempotencyKey: user.id
     });
 
     // Store the relation between userId and stripeCustomerId in your KV
