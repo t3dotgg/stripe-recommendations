@@ -235,6 +235,7 @@ If there are more I should be tracking for updates, please file a PR. If they do
 ```ts
 const allowedEvents: Stripe.Event.Type[] = [
   "checkout.session.completed",
+  "checkout.session.async_payment_succeeded",
   "customer.subscription.created",
   "customer.subscription.updated",
   "customer.subscription.deleted",
