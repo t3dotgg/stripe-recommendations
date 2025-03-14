@@ -10,7 +10,7 @@ Until then, this is how I recommend setting up Stripe. I don't cover everything 
 
 > If you want to stay sane implementing file uploads, check out my product [UploadThing](https://uploadthing.com/).
 
-### Pre-requirements
+### Prerequisites
 
 - TypeScript
 - Some type of JS backend
