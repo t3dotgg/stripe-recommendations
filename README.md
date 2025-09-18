@@ -294,7 +294,7 @@ This is a really useful hidden setting that has saved me a lot of headaches and 
 While I have solved a lot of stuff here, in particular the "subscription" flows, there are a few things that are still your problem. Those include...
 
 - Managing `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` env vars for both testing and production
-- Managing `STRIPE_PRICE_ID`s for all subscription tiers for dev and prod (I can't believe this is still a thing)
+- Managing `STRIPE_PRICE_ID`s for all subscription tiers for dev and prod (I can't believe this is still a thing). You can simplify this by using [**Stripe Lookup Keys**](https://docs.stripe.com/products-prices/manage-prices?dashboard-or-api=api#lookup-keys) instead of hardcoding the price id.
 - Exposing sub data from your KV to your user (a dumb endpoint is probably fine)
 - Tracking "usage" (i.e. a user gets 100 messages per month)
 - Managing "free trials"
