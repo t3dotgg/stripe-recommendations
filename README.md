@@ -36,7 +36,7 @@ This is a quick overview of the "flow" I recommend. More detail below. Even if y
 1. **BACKEND:** Create a Stripe customer
 1. **BACKEND:** Store binding between Stripe's `customerId` and your app's `userId`
 1. **BACKEND:** Create a "checkout session" for the user
-   - With the return URL set to a dedicated `/success` route in your app
+   - With `success_url` set to a dedicated `/success` route in your app
 1. **USER:** Makes payment, subscribes, redirects back to `/success`
 1. **FRONTEND:** On load, triggers a `syncAfterSuccess` function on backend (hit an API, server action, rsc on load, whatever)
 1. **BACKEND:** Uses `userId` to get Stripe `customerId` from KV
@@ -53,6 +53,16 @@ Let's go into the details on the important parts here.
 The key is to make sure **you always have the customer defined BEFORE YOU START CHECKOUT**. The ephemerality of "customer" is a straight up design flaw and I have no idea why they built Stripe like this.
 
 Here's an adapted example from how we're doing it in [T3 Chat](https://t3.chat).
+
+First, set up the Stripe client on your backend. These examples use [API version `2026-09-30.endive`](https://docs.stripe.com/api/versioning) with stripe-node v23.0.0. Recent SDKs pin the API version for you. I'm spelling it out here so there's no guessing. Set your webhook endpoint to the same version too.
+
+```ts
+import Stripe from "stripe";
+
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2026-09-30.endive",
+});
+```
 
 ```ts
 export async function GET(req: Request) {
@@ -78,10 +88,17 @@ export async function GET(req: Request) {
   // ALWAYS create a checkout with a stripeCustomerId. They should enforce this.
   const checkout = await stripe.checkout.sessions.create({
     customer: stripeCustomerId,
+    mode: "subscription",
+    ui_mode: "hosted_page",
+    line_items: [{ price: process.env.STRIPE_PRICE_ID!, quantity: 1 }],
     success_url: "https://t3.chat/success",
-    ...
   });
+
+  return Response.json({ url: checkout.url });
+}
 ```
+
+This is hosted Checkout, so the parameter is `success_url`. `return_url` is for `embedded_page` / `elements` when you're using redirect-based payment methods. Yes, these are different things. Send the frontend to `checkout.url`.
 
 ### syncStripeDataToKV
 
@@ -90,6 +107,9 @@ This is the function that syncs all of the data for a given Stripe customer to y
 The Stripe api returns a ton of data, much of which can not be serialized to JSON. I've selected the "most likely to be needed" chunk here for you to use, and there's a [type definition later in the file](#custom-stripe-subscription-type).
 
 Your implementation will vary based on if you're doing subscriptions or one-time purchases. The example below is with subcriptions (again from [T3 Chat](https://t3.chat)).
+
+> [!NOTE]
+> Stripe [moved `current_period_start` and `current_period_end` onto subscription items in Basil](https://docs.stripe.com/changelog/basil/2025-03-31/deprecate-subscription-current-period-start-and-end). Because apparently knowing when a subscription ends was too easy. This example uses the first item's price and billing period. If you have multiple items with different billing periods, that's your problem too.
 
 ```ts
 // The contents of this function should probably be wrapped in a try/catch
@@ -103,21 +123,25 @@ export async function syncStripeDataToKV(customerId: string) {
   });
 
   if (subscriptions.data.length === 0) {
-    const subData = { status: "none" };
+    const subData: STRIPE_SUB_CACHE = { status: "none" };
     await kv.set(`stripe:customer:${customerId}`, subData);
     return subData;
   }
 
   // If a user can have multiple subscriptions, that's your problem
   const subscription = subscriptions.data[0];
+  const item = subscription.items.data[0];
+  if (!item) {
+    throw new Error(`[STRIPE SYNC] No items for ${subscription.id}`);
+  }
 
   // Store complete subscription state
-  const subData = {
+  const subData: STRIPE_SUB_CACHE = {
     subscriptionId: subscription.id,
     status: subscription.status,
-    priceId: subscription.items.data[0].price.id,
-    currentPeriodEnd: subscription.current_period_end,
-    currentPeriodStart: subscription.current_period_start,
+    priceId: item.price.id,
+    currentPeriodEnd: item.current_period_end,
+    currentPeriodStart: item.current_period_start,
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
     paymentMethod:
       subscription.default_payment_method &&
@@ -161,6 +185,8 @@ Notice how I'm not using any of the `CHECKOUT_SESSION_ID` stuff? That's because 
 
 This is the part everyone hates the most. I'm just gonna dump the code and justify myself later.
 
+Use `constructEventAsync` with Web Crypto because edge runtimes (Vercel Edge, Cloudflare Workers) don't have Node's synchronous crypto. Await the sync before sending a `200`; if it fails, Stripe needs a failure response to retry. `waitUntil` keeps work alive, but it can't take back a `200`.
+
 ```ts
 export async function POST(req: Request) {
   const body = await req.text();
@@ -168,24 +194,26 @@ export async function POST(req: Request) {
 
   if (!signature) return NextResponse.json({}, { status: 400 });
 
-  async function doEventProcessing() {
-    if (typeof signature !== "string") {
-      throw new Error("[STRIPE HOOK] Header isn't a string???");
-    }
-
-    const event = stripe.webhooks.constructEvent(
+  let event: Stripe.Event;
+  try {
+    event = await stripe.webhooks.constructEventAsync(
       body,
       signature,
-      process.env.STRIPE_WEBHOOK_SECRET!
+      process.env.STRIPE_WEBHOOK_SECRET!,
+      undefined, // Keep Stripe's default timestamp tolerance
+      Stripe.createSubtleCryptoProvider()
     );
 
-    waitUntil(processEvent(event));
+  } catch (error) {
+    console.error("[STRIPE HOOK] Error verifying event", error);
+    return NextResponse.json({}, { status: 400 });
   }
 
-  const { error } = await tryCatch(doEventProcessing());
+  const { error } = await tryCatch(processEvent(event));
 
   if (error) {
     console.error("[STRIPE HOOK] Error processing event", error);
+    return NextResponse.json({}, { status: 500 });
   }
 
   return NextResponse.json({ received: true });
@@ -212,10 +240,13 @@ async function processEvent(event: Stripe.Event) {
   // Skip processing if the event isn't one I'm tracking (list of all events below)
   if (!allowedEvents.includes(event.type)) return;
 
-  // All the events I track have a customerId
+  // These event objects have a customer field
   const { customer: customerId } = event?.data?.object as {
-    customer: string; // Sadly TypeScript does not know this
+    customer: string | null; // Sadly TypeScript does not know this
   };
+
+  // PaymentIntents can exist without a customer. Nothing to sync in that case.
+  if (customerId === null) return;
 
   // This helps make it typesafe and also lets me know if my assumption is wrong
   if (typeof customerId !== "string") {
@@ -232,9 +263,13 @@ async function processEvent(event: Stripe.Event) {
 
 If there are more I should be tracking for updates, please file a PR. If they don't affect subscription state, I do not care.
 
+Checkout completing doesn't mean a delayed payment succeeded. I track the eventual success/failure too. Voiding an invoice can change the subscription status, so that makes the cut as well. Still just calling the same sync function.
+
 ```ts
 const allowedEvents: Stripe.Event.Type[] = [
   "checkout.session.completed",
+  "checkout.session.async_payment_succeeded",
+  "checkout.session.async_payment_failed",
   "customer.subscription.created",
   "customer.subscription.updated",
   "customer.subscription.deleted",
@@ -248,6 +283,7 @@ const allowedEvents: Stripe.Event.Type[] = [
   "invoice.payment_action_required",
   "invoice.upcoming",
   "invoice.marked_uncollectible",
+  "invoice.voided",
   "invoice.payment_succeeded",
   "payment_intent.succeeded",
   "payment_intent.payment_failed",
@@ -263,8 +299,8 @@ export type STRIPE_SUB_CACHE =
       subscriptionId: string | null;
       status: Stripe.Subscription.Status;
       priceId: string | null;
-      currentPeriodStart: number | null;
-      currentPeriodEnd: number | null;
+      currentPeriodStart: Stripe.SubscriptionItem["current_period_start"];
+      currentPeriodEnd: Stripe.SubscriptionItem["current_period_end"];
       cancelAtPeriodEnd: boolean;
       paymentMethod: {
         brand: string | null; // e.g., "visa", "mastercard"
